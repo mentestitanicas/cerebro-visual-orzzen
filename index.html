@@ -142,5 +142,45 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="./app.js"></script>
+  <script>
+    // Capa de seguridad de renderizado: en mapas grandes vis-network puede tardar
+    // en estabilizar y quedar aparentemente vacío. Esta rutina fuerza un redraw
+    // y un fit después de cada render sin alterar datos ni lógica del cerebro.
+    (function () {
+      function ensureGraphVisible() {
+        try {
+          if (typeof network === 'undefined' || !network || typeof currentRendered === 'undefined') return;
+          const count = currentRendered?.nodes?.length || 0;
+          if (!count) return;
+          if (count > 250) network.setOptions({ physics: false });
+          network.redraw();
+          setTimeout(function () {
+            try {
+              network.redraw();
+              network.fit({ animation: false });
+            } catch (_) {}
+          }, 80);
+        } catch (_) {}
+      }
+
+      window.addEventListener('load', function () {
+        setTimeout(ensureGraphVisible, 250);
+        setTimeout(ensureGraphVisible, 900);
+      });
+
+      document.addEventListener('click', function (ev) {
+        if (ev.target.closest('.tab, .quick-focus, #btnReset, #btnFit, #btnRefresh, #btnTypesAll, .type-filter, .evidence-filter')) {
+          setTimeout(ensureGraphVisible, 140);
+          setTimeout(ensureGraphVisible, 500);
+        }
+      });
+
+      document.addEventListener('input', function (ev) {
+        if (ev.target.matches('#searchInput, #productSelect, #sourceSelect')) {
+          setTimeout(ensureGraphVisible, 120);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
