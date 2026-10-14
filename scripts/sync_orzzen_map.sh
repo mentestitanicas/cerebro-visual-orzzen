@@ -31,7 +31,16 @@ fi
 
 TMP="$(mktemp -t orzzen-map.XXXXXX).json"
 trap 'rm -f "$TMP"; rmdir "$LOCK" 2>/dev/null || true' EXIT
-cp "$SOURCE" "$TMP"
+/usr/bin/python3 - "$SOURCE" "$TMP" <<'PYCOPY'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+
+with open(src, "rb") as fsrc:
+    data = fsrc.read()
+
+with open(dst, "wb") as fdst:
+    fdst.write(data)
+PYCOPY
 
 # Valida JSON antes de publicar.
 /usr/bin/python3 -m json.tool "$TMP" >/dev/null
