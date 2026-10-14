@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cerebro Visual ORZZEN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Cerebro Visual ORZZEN</h1>
+        <div class="top-meta">
+          <span id="badgeSchema" class="badge">Cargando…</span>
+          <span id="generatedAt"></span>
+          <span id="summaryCounts"></span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="btnReset">Reiniciar vista</button>
+        <button id="btnFit">Centrar</button>
+        <button id="btnRefresh">Recargar datos</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="left-panel panel">
+        <section>
+          <label for="searchInput">Buscar</label>
+          <input id="searchInput" type="text" placeholder="AN49, campaña, producto, objeción…" />
+          <div id="searchHelp" class="small muted">Busca por nombre, id, contenido o evidencia.</div>
+        </section>
+
+        <section>
+          <div class="section-title">Vista</div>
+          <div class="segmented">
+            <button class="tab active" data-mode="resumen">Resumen</button>
+            <button class="tab" data-mode="conexiones">Conexiones</button>
+            <button class="tab" data-mode="recorrido">Recorrido</button>
+          </div>
+        </section>
+
+        <section>
+          <label for="productSelect">Producto / grupo</label>
+          <select id="productSelect">
+            <option value="">Todos</option>
+          </select>
+        </section>
+
+        <section>
+          <label for="sourceSelect">Fuente</label>
+          <select id="sourceSelect">
+            <option value="">Todas</option>
+          </select>
+        </section>
+
+        <section>
+          <div class="section-title">Grado de confirmación</div>
+          <div class="checkbox-list" id="evidenceFilters"></div>
+          <div class="legend-item"><span class="legend-line legend-confirmado"></span> confirmado: registro directo</div>
+          <div class="legend-item"><span class="legend-line legend-probable"></span> probable: evidencia indirecta</div>
+          <div class="legend-item"><span class="legend-line legend-pendiente"></span> pendiente o bloqueado</div>
+        </section>
+
+        <section>
+          <div class="section-title">Tipos</div>
+          <div class="checkbox-grid" id="typeFilters"></div>
+        </section>
+
+        <section>
+          <div class="section-title">Herramientas</div>
+          <div class="tool-buttons">
+            <button id="btnShowSelection">Solo selección</button>
+            <button id="btnShowNeighbors">Vecinos directos</button>
+            <button id="btnExportSelection">Exportar selección</button>
+          </div>
+          <div class="small muted">Tip: haz clic en un nodo para ver detalles y sus relaciones.</div>
+        </section>
+
+        <section>
+          <div class="section-title">Cobertura y frescura</div>
+          <div id="freshnessBox" class="small"></div>
+        </section>
+      </aside>
+
+      <section class="center-panel panel">
+        <div class="mini-toolbar">
+          <div id="activeModeLabel" class="pill">Resumen por productos y áreas</div>
+          <div class="mini-metrics" id="activeViewStats"></div>
+        </div>
+        <div id="network"></div>
+      </section>
+
+      <aside class="right-panel panel">
+        <div id="detailsEmpty" class="empty-state">
+          <h3>Sin selección</h3>
+          <p>Haz clic en un nodo o una relación para ver detalles, contexto, documentos y evidencia.</p>
+        </div>
+        <div id="detailsNode" class="hidden"></div>
+        <div id="detailsEdge" class="hidden"></div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
