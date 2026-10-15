@@ -11,6 +11,9 @@
   let observedDataSet = null;
   let layoutTimer = null;
   let applyingLayout = false;
+  let lastHealthyNetwork = null;
+  let lastHealthyDataSet = null;
+  let lastHealthyCount = -1;
 
   function stripAccents(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -154,6 +157,24 @@
     } catch (err) {
       console.warn('ORZZEN network configuration warning:', err);
     }
+  }
+
+  function keepGraphHealthy() {
+    try {
+      injectAskBar();
+      injectZoomControls();
+      configureNetwork();
+      if (typeof network === 'undefined' || !network || typeof nodesDS === 'undefined' || !nodesDS) return;
+
+      const count = nodesDS.length || 0;
+      const changed = network !== lastHealthyNetwork || nodesDS !== lastHealthyDataSet || count !== lastHealthyCount;
+      lastHealthyNetwork = network;
+      lastHealthyDataSet = nodesDS;
+      lastHealthyCount = count;
+
+      network.setOptions({ physics: { enabled: false }, layout: { improvedLayout: false } });
+      if (changed && count > 0) scheduleLayout(0);
+    } catch (_) {}
   }
 
   function zoom(factor) {
@@ -347,15 +368,8 @@
   }
 
   function bootstrap() {
-    injectAskBar();
-    injectZoomControls();
-    configureNetwork();
-    let checks=0;
-    const timer=setInterval(function(){
-      injectAskBar(); injectZoomControls(); configureNetwork();
-      checks++;
-      if(checks>24) clearInterval(timer);
-    },250);
+    keepGraphHealthy();
+    setInterval(keepGraphHealthy, 500);
   }
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',bootstrap); else bootstrap();
