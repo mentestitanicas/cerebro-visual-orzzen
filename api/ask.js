@@ -42,25 +42,38 @@ REGLAS OBLIGATORIAS:
 10. Sé conciso: responde primero la conclusión y después la evidencia esencial.`;
 }
 
+function extractOpenAIText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  const chunks = [];
+  for (const item of Array.isArray(data?.output) ? data.output : []) {
+    for (const part of Array.isArray(item?.content) ? item.content : []) {
+      if (part?.type === 'output_text' && typeof part?.text === 'string') chunks.push(part.text);
+      else if (typeof part?.text === 'string') chunks.push(part.text);
+    }
+  }
+  return chunks.join('\n').trim();
+}
+
 async function askOpenAI(question, evidence) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY no configurada');
-  const model = process.env.OPENAI_MODEL || 'gpt-5.6';
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+  const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
+  const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: systemPrompt() },
-        { role: 'user', content: `PREGUNTA:\n${question}\n\nEVIDENCIA DEL MAPA:\n${evidence}` }
-      ]
+      instructions: systemPrompt(),
+      input: `PREGUNTA:\n${question}\n\nEVIDENCIA DEL MAPA:\n${evidence}`,
+      max_output_tokens: 1400
     })
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${r.status}`);
-  const answer = data?.choices?.[0]?.message?.content;
+  if (!r.ok) {
+    const code = data?.error?.code ? ` [${data.error.code}]` : '';
+    throw new Error((data?.error?.message || `OpenAI HTTP ${r.status}`) + code);
+  }
+  const answer = extractOpenAIText(data);
   if (!answer) throw new Error('OpenAI no devolvió una respuesta utilizable');
   return { answer, provider: 'OpenAI', model };
 }
