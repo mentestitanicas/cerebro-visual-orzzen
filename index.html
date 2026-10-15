@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./performance-qa.css" />
   <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
 </head>
 <body>
@@ -125,7 +126,7 @@
           <div class="mini-metrics" id="activeViewStats"></div>
         </div>
         <div id="network"></div>
-        <div class="graph-hint">Arrastra para mover · rueda para zoom · clic en nodo o relación para inspeccionar</div>
+        <div class="graph-hint">Arrastra para mover · rueda o trackpad para zoom · clic en nodo o relación para inspeccionar</div>
       </section>
 
       <aside class="right-panel panel">
@@ -143,84 +144,36 @@
   <div id="toast" class="toast hidden"></div>
   <script src="./app.js"></script>
   <script src="./live-data.js"></script>
+  <script src="./performance-qa.js"></script>
   <script>
-    // Reparación visual para mapas grandes: deja que vis-network calcule posiciones
-    // antes de centrar la cámara. No altera datos ni reglas del Cerebro ORZZEN.
+    // Ajuste inicial único para mapas grandes. Después se apaga la física para
+    // que navegar, hacer zoom y seleccionar nodos sea mucho más rápido.
     (function () {
-      let repairTimer = null;
-
-      function finishGraphView() {
-        try {
-          if (typeof network === 'undefined' || !network || typeof nodesDS === 'undefined' || !nodesDS || nodesDS.length === 0) return;
-          const container = document.getElementById('network');
-          if (!container) return;
-
-          const width = Math.max(container.clientWidth, 640);
-          const height = Math.max(container.clientHeight, 590);
-          network.setSize(width + 'px', height + 'px');
-          network.redraw();
-          network.fit({ animation: false });
-          network.redraw();
-        } catch (err) {
-          console.warn('ORZZEN graph finish warning:', err);
-        }
-      }
-
-      function ensureGraphVisible() {
+      function finishInitialGraph() {
         try {
           if (typeof network === 'undefined' || !network || typeof nodesDS === 'undefined' || !nodesDS || nodesDS.length === 0) {
-            clearTimeout(repairTimer);
-            repairTimer = setTimeout(ensureGraphVisible, 250);
+            setTimeout(finishInitialGraph, 250);
             return;
           }
-
-          network.setOptions({
-            physics: {
-              enabled: true,
-              stabilization: { enabled: true, iterations: 150, fit: false },
-              barnesHut: {
-                gravitationalConstant: -4000,
-                springLength: 120,
-                springConstant: 0.03,
-                damping: 0.22
-              }
-            }
-          });
-
-          network.once('stabilizationIterationsDone', function () {
-            try { network.setOptions({ physics: { enabled: false } }); } catch (_) {}
-            finishGraphView();
-          });
-
-          network.stabilize(150);
-          clearTimeout(repairTimer);
-          repairTimer = setTimeout(function () {
-            try { network.setOptions({ physics: { enabled: false } }); } catch (_) {}
-            finishGraphView();
-          }, 2200);
+          const container = document.getElementById('network');
+          if (!container) return;
+          network.setSize(Math.max(container.clientWidth, 640) + 'px', Math.max(container.clientHeight, 590) + 'px');
+          network.setOptions({ physics: { enabled: false } });
+          network.redraw();
+          network.fit({ animation: false });
+          if (window.ORZZEN_VISUAL_TOOLS) window.ORZZEN_VISUAL_TOOLS.optimize();
         } catch (err) {
-          console.warn('ORZZEN graph repair warning:', err);
+          console.warn('ORZZEN graph initial-fit warning:', err);
         }
       }
-
-      window.addEventListener('load', function () {
-        setTimeout(ensureGraphVisible, 350);
-      });
-
-      document.addEventListener('click', function (ev) {
-        if (ev.target.closest('.tab, .quick-focus, #btnReset, #btnFit, #btnRefresh, #btnTypesAll, .type-filter, .evidence-filter')) {
-          setTimeout(ensureGraphVisible, 180);
-        }
-      });
-
-      document.addEventListener('input', function (ev) {
-        if (ev.target.matches('#searchInput, #productSelect, #sourceSelect')) {
-          setTimeout(ensureGraphVisible, 180);
-        }
-      });
-
+      window.addEventListener('load', function () { setTimeout(finishInitialGraph, 700); });
       window.addEventListener('resize', function () {
-        setTimeout(finishGraphView, 120);
+        clearTimeout(window.__orzzenResizeTimer);
+        window.__orzzenResizeTimer = setTimeout(function () {
+          try {
+            if (typeof network !== 'undefined' && network) network.redraw();
+          } catch (_) {}
+        }, 150);
       });
     })();
   </script>
