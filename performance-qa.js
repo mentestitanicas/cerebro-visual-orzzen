@@ -7,10 +7,10 @@
     noviembre: 10, diciembre: 11
   };
 
-  let optimizedNetwork = null;
+  let configuredNetwork = null;
   let observedDataSet = null;
-  let settleTimer = null;
-  let freezeTimer = null;
+  let layoutTimer = null;
+  let applyingLayout = false;
 
   function stripAccents(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -22,67 +22,109 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
-  function visibleCount() {
-    try { return typeof nodesDS !== 'undefined' && nodesDS ? nodesDS.length : 0; } catch (_) { return 0; }
+  function getNodeMeta(id) {
+    try {
+      if (typeof allNodes === 'undefined' || !Array.isArray(allNodes)) return null;
+      return allNodes.find(n => n.id === id) || null;
+    } catch (_) { return null; }
   }
 
-  function fitFast(delay) {
-    setTimeout(function () {
-      try {
-        if (typeof network !== 'undefined' && network && visibleCount()) {
-          network.redraw();
-          network.fit({ animation: false });
-        }
-      } catch (_) {}
-    }, delay || 0);
+  function scheduleLayout(delay) {
+    clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(applyStableLayout, delay == null ? 20 : delay);
   }
 
-  function settleGraph() {
-    clearTimeout(settleTimer);
-    clearTimeout(freezeTimer);
-    settleTimer = setTimeout(function () {
-      try {
-        if (typeof network === 'undefined' || !network || !visibleCount()) return;
-        const count = visibleCount();
-        const iterations = count > 900 ? 28 : count > 350 ? 36 : count > 120 ? 45 : 60;
+  function applyStableLayout() {
+    if (applyingLayout) return;
+    try {
+      if (typeof network === 'undefined' || !network || typeof nodesDS === 'undefined' || !nodesDS) return;
+      const visNodes = nodesDS.get();
+      if (!visNodes || !visNodes.length) return;
 
-        network.setOptions({
-          physics: {
-            enabled: true,
-            stabilization: { enabled: true, iterations, updateInterval: 20, fit: false },
-            barnesHut: {
-              gravitationalConstant: count > 500 ? -2600 : -3400,
-              springLength: count > 500 ? 90 : 115,
-              springConstant: 0.025,
-              damping: 0.32,
-              avoidOverlap: 0.08
-            }
-          }
+      applyingLayout = true;
+      network.setOptions({
+        physics: { enabled: false },
+        layout: { improvedLayout: false },
+        interaction: {
+          hover: false,
+          multiselect: false,
+          navigationButtons: false,
+          keyboard: true,
+          zoomView: true,
+          dragView: true,
+          dragNodes: true,
+          hideEdgesOnDrag: true,
+          hideEdgesOnZoom: true,
+          tooltipDelay: 350
+        },
+        edges: { smooth: false, shadow: false, hoverWidth: 0, selectionWidth: 1.5 },
+        nodes: { shadow: false }
+      });
+
+      const groups = new Map();
+      visNodes.forEach(v => {
+        const meta = getNodeMeta(v.id);
+        const key = (meta && meta.g) || (meta && meta.t) || 'otros';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(v);
+      });
+
+      const entries = [...groups.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+      const updates = [];
+      const golden = Math.PI * (3 - Math.sqrt(5));
+
+      if (visNodes.length <= 24) {
+        const radius = visNodes.length <= 1 ? 0 : Math.max(85, 22 * visNodes.length);
+        visNodes.forEach((v, i) => {
+          const angle = visNodes.length <= 1 ? 0 : (Math.PI * 2 * i) / visNodes.length - Math.PI / 2;
+          updates.push({ id: v.id, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, physics: false });
         });
-        network.stabilize(iterations);
-
-        freezeTimer = setTimeout(function () {
-          try {
-            if (network) {
-              network.setOptions({ physics: { enabled: false } });
-              network.redraw();
-              network.fit({ animation: false });
+      } else {
+        const groupCount = entries.length;
+        const clusterRadius = groupCount <= 1 ? 0 : Math.min(650, Math.max(300, 155 * Math.sqrt(groupCount)));
+        entries.forEach(([key, items], gi) => {
+          const ga = groupCount <= 1 ? 0 : (Math.PI * 2 * gi) / groupCount - Math.PI / 2;
+          const cx = Math.cos(ga) * clusterRadius;
+          const cy = Math.sin(ga) * clusterRadius;
+          items.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+          const spacing = items.length > 700 ? 12 : items.length > 300 ? 14 : items.length > 120 ? 17 : 23;
+          items.forEach((v, i) => {
+            const meta = getNodeMeta(v.id);
+            const important = meta && ((meta.lvl ?? 99) <= 1 || ['producto','campana','cuenta','area'].includes(meta.t));
+            if (i === 0 || important && i < 4) {
+              const offset = i * 22;
+              updates.push({ id: v.id, x: cx + offset, y: cy + offset, physics: false });
+              return;
             }
-          } catch (_) {}
-        }, count > 700 ? 850 : 500);
-      } catch (err) {
-        console.warn('ORZZEN settle warning:', err);
+            const r = spacing * Math.sqrt(i + 1);
+            const a = (i + 1) * golden;
+            updates.push({ id: v.id, x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, physics: false });
+          });
+        });
       }
-    }, 60);
+
+      nodesDS.update(updates);
+      network.redraw();
+      requestAnimationFrame(function () {
+        try {
+          if (network && nodesDS && nodesDS.length) network.fit({ animation: false });
+        } catch (_) {}
+        applyingLayout = false;
+      });
+    } catch (err) {
+      applyingLayout = false;
+      console.warn('ORZZEN stable layout warning:', err);
+    }
   }
 
-  function optimizeNetwork() {
+  function configureNetwork() {
     try {
       if (typeof network === 'undefined' || !network) return;
-
-      if (network !== optimizedNetwork) {
-        optimizedNetwork = network;
+      if (network !== configuredNetwork) {
+        configuredNetwork = network;
         network.setOptions({
+          physics: { enabled: false },
+          layout: { improvedLayout: false },
           interaction: {
             hover: false,
             multiselect: false,
@@ -95,25 +137,22 @@
             hideEdgesOnZoom: true,
             tooltipDelay: 350
           },
-          edges: {
-            smooth: false,
-            shadow: false,
-            selectionWidth: 1.5,
-            hoverWidth: 0
-          },
+          edges: { smooth: false, shadow: false, hoverWidth: 0, selectionWidth: 1.5 },
           nodes: { shadow: false }
         });
-        settleGraph();
+        scheduleLayout(0);
       }
 
       if (typeof nodesDS !== 'undefined' && nodesDS && nodesDS !== observedDataSet) {
         observedDataSet = nodesDS;
         nodesDS.on('*', function (event) {
-          if (event === 'add' || event === 'remove' || event === 'update') settleGraph();
+          if (applyingLayout) return;
+          if (event === 'add' || event === 'remove' || event === 'update') scheduleLayout(15);
         });
+        scheduleLayout(0);
       }
     } catch (err) {
-      console.warn('ORZZEN performance optimization warning:', err);
+      console.warn('ORZZEN network configuration warning:', err);
     }
   }
 
@@ -121,8 +160,17 @@
     try {
       if (typeof network === 'undefined' || !network) return;
       const scale = network.getScale();
-      const next = Math.max(0.05, Math.min(5, scale * factor));
-      network.moveTo({ scale: next, animation: { duration: 100, easingFunction: 'easeInOutQuad' } });
+      const next = Math.max(0.05, Math.min(6, scale * factor));
+      network.moveTo({ scale: next, animation: false });
+    } catch (_) {}
+  }
+
+  function fitFast() {
+    try {
+      if (typeof network !== 'undefined' && network && typeof nodesDS !== 'undefined' && nodesDS && nodesDS.length) {
+        network.redraw();
+        network.fit({ animation: false });
+      }
     } catch (_) {}
   }
 
@@ -289,29 +337,27 @@
       out.innerHTML=html;
       out.querySelectorAll('[data-brain-node]').forEach(btn=>btn.addEventListener('click',function(){
         const id=btn.dataset.brainNode;
-        try{if(typeof renderDetailsForNode==='function')renderDetailsForNode(id);if(typeof network!=='undefined'&&network){network.selectNodes([id]);network.focus(id,{scale:Math.max(network.getScale(),1.25),animation:{duration:180}});}}catch(_){}
+        try {
+          if(typeof jumpToNode==='function') jumpToNode(id);
+          else if(typeof renderDetailsForNode==='function') renderDetailsForNode(id);
+          scheduleLayout(0);
+        } catch(_){}
       }));
-    },20);
+    },10);
   }
 
   function bootstrap() {
-    injectAskBar(); injectZoomControls(); optimizeNetwork();
-    const timer=setInterval(function(){injectAskBar();injectZoomControls();optimizeNetwork();},500);
-    setTimeout(()=>clearInterval(timer),30000);
-
-    // Los botones/filtros originales sí modifican el DataSet. Este listener solo
-    // asegura que el nuevo subconjunto tenga posiciones visibles y se congele rápido.
-    document.addEventListener('click',function(ev){
-      if(ev.target.closest('.tab,.quick-focus,#btnReset,#btnFit,#btnRefresh,#btnTypesAll,.type-filter,.evidence-filter,#btnShowSelection,#btnShowNeighbors')) setTimeout(settleGraph,20);
-    });
-    document.addEventListener('change',function(ev){
-      if(ev.target.matches('#productSelect,#sourceSelect,.type-filter,.evidence-filter')) setTimeout(settleGraph,20);
-    });
-    document.addEventListener('input',function(ev){
-      if(ev.target.matches('#searchInput')) setTimeout(settleGraph,80);
-    });
+    injectAskBar();
+    injectZoomControls();
+    configureNetwork();
+    let checks=0;
+    const timer=setInterval(function(){
+      injectAskBar(); injectZoomControls(); configureNetwork();
+      checks++;
+      if(checks>24) clearInterval(timer);
+    },250);
   }
 
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrap);else bootstrap();
-  window.ORZZEN_VISUAL_TOOLS={optimize:optimizeNetwork,zoomIn:()=>zoom(1.35),zoomOut:()=>zoom(0.74),fit:()=>fitFast(),settle:settleGraph};
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',bootstrap); else bootstrap();
+  window.ORZZEN_VISUAL_TOOLS={ optimize:configureNetwork, zoomIn:()=>zoom(1.35), zoomOut:()=>zoom(0.74), fit:fitFast, relayout:applyStableLayout };
 })();
