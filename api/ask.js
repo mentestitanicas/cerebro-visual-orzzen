@@ -54,10 +54,13 @@ function extractOpenAIText(data) {
   return chunks.join('\n').trim();
 }
 
-async function askOpenAI(question, evidence) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY no configurada');
-  const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
+function openAIModelCandidates() {
+  const configured = String(process.env.OPENAI_MODEL || '').trim();
+  const defaults = ['gpt-6-luna', 'gpt-5-mini', 'gpt-4o-mini'];
+  return [...new Set([configured, ...defaults].filter(Boolean))];
+}
+
+async function callOpenAIModel(apiKey, model, question, evidence) {
   const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -70,12 +73,35 @@ async function askOpenAI(question, evidence) {
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const code = data?.error?.code ? ` [${data.error.code}]` : '';
-    throw new Error((data?.error?.message || `OpenAI HTTP ${r.status}`) + code);
+    const err = new Error(data?.error?.message || `OpenAI HTTP ${r.status}`);
+    err.status = r.status;
+    err.code = data?.error?.code || '';
+    err.type = data?.error?.type || '';
+    throw err;
   }
   const answer = extractOpenAIText(data);
   if (!answer) throw new Error('OpenAI no devolvió una respuesta utilizable');
   return { answer, provider: 'OpenAI', model };
+}
+
+async function askOpenAI(question, evidence) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY no configurada');
+
+  const failures = [];
+  for (const model of openAIModelCandidates()) {
+    try {
+      return await callOpenAIModel(apiKey, model, question, evidence);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      failures.push(`${model}: ${msg}`);
+      // Errores de autenticación, cuota o facturación no se arreglan cambiando de modelo.
+      if (err?.status === 401 || err?.status === 403 || err?.status === 429 || /quota|billing|credit|api key|authentication|insufficient/i.test(msg)) {
+        break;
+      }
+    }
+  }
+  throw new Error(failures.join(' | ') || 'OpenAI no pudo responder');
 }
 
 async function askAnthropic(question, evidence) {
@@ -173,9 +199,10 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  const firstError = errors[0] || 'Error desconocido del proveedor de IA';
   return json(res, 502, {
     error: 'AI_PROVIDER_FAILED',
-    message: 'Los proveedores configurados no pudieron responder en este momento.',
+    message: `La IA no pudo responder. Detalle: ${firstError}`,
     details: errors.slice(0, 3)
   });
 };
